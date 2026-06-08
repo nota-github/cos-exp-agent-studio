@@ -143,7 +143,7 @@ const StartExecutionSchema = z.object({
     .optional(),
 })
 
-executionRouter.post('/', (req: Request, res: Response) => {
+executionRouter.post('/', async (req: Request, res: Response) => {
   const result = StartExecutionSchema.safeParse(req.body)
   if (!result.success) {
     res.status(400).json({
@@ -155,8 +155,8 @@ executionRouter.post('/', (req: Request, res: Response) => {
 
   const { projectId, requestText, options } = result.data
 
-  const { configured, missing } = settingsManager.isConfigured()
-  if (!configured) {
+  const { ok, missing } = await settingsManager.isConfigured()
+  if (!ok) {
     res.status(400).json({ error: '필수 설정을 완료해주세요', missing })
     return
   }
@@ -191,12 +191,13 @@ executionRouter.post('/', (req: Request, res: Response) => {
     }
   }
 
-  const settings = settingsManager.getSettings()
-  const { command, args } = buildSpawnArgs(settings.cli_path!, requestText, project.path, options)
+  const config = settingsManager.loadConfig()
+  const apiKey = await settingsManager.getApiKey()
+  const { command, args } = buildSpawnArgs(config.cliPath, requestText, project.path, options)
 
   const spawnEnv: NodeJS.ProcessEnv = {
     ...process.env,
-    ANTHROPIC_API_KEY: settings.api_key ?? process.env.ANTHROPIC_API_KEY ?? '',
+    ANTHROPIC_API_KEY: apiKey ?? '',
   }
 
   db.prepare("UPDATE executions SET status = 'running' WHERE id = ?").run(executionId)
