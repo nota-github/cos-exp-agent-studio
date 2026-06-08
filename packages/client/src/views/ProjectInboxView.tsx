@@ -24,7 +24,7 @@ export default function ProjectInboxView() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 bg-gray-950 flex-shrink-0">
           <div>
             <h1 className="text-base font-semibold text-white leading-tight">내 프로젝트</h1>
-            <p className="text-xs text-gray-500 mt-0.5">Agent Studio</p>
+            <p className="text-xs text-gray-500 mt-0.5">터미널 없이 에이전트를 실행하세요</p>
           </div>
           <button
             onClick={handleAddProject}
@@ -86,7 +86,7 @@ export default function ProjectInboxView() {
               </div>
               <p className="text-gray-300 font-medium mb-1">아직 프로젝트가 없습니다</p>
               <p className="text-gray-500 text-sm mb-6 max-w-xs leading-relaxed">
-                첫 번째 프로젝트를 추가해 에이전트를 실행해 보세요.
+                작업할 로컬 폴더를 등록하면 채팅창에서 AI 에이전트에게 코딩 작업을 요청할 수 있습니다.
               </p>
               <button
                 onClick={handleAddProject}
