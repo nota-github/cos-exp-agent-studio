@@ -10,6 +10,7 @@ import LogPanel from '../components/LogPanel'
 import Sidebar from '../components/Sidebar'
 import MessageBubble from '../components/MessageBubble'
 import InputBar from '../components/InputBar'
+import Toast from '../components/Toast'
 import { useExecutionStatus } from '../hooks/useExecutionStatus'
 import { useMessages, messagesQueryKey } from '../api/messages'
 import type { ChatMessage } from '../api/messages'
@@ -39,6 +40,7 @@ export default function ChatView() {
   const [submitting, setSubmitting] = useState(false)
   const [missingSettings, setMissingSettings] = useState<string[] | null>(null)
   const [editState, setEditState] = useState<{ text: string; key: number } | null>(null)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -85,10 +87,69 @@ export default function ChatView() {
         ]
       })
     }
+
+    if (msg.type === 'connected' && projectId) {
+      const pendingApprovals = Array.isArray(msg.pendingApprovals)
+        ? (msg.pendingApprovals as Array<{
+            id: string
+            execution_id: string
+            action_type: string
+            target: string
+            risk_level: 'low' | 'medium' | 'high'
+            description: string
+            requested_at: string
+          }>)
+        : []
+
+      if (pendingApprovals.length === 0) return
+
+      const existing = queryClient.getQueryData<ChatMessage[]>(messagesQueryKey(projectId)) ?? []
+      const toAdd = pendingApprovals
+        .filter((approval) => {
+          const wsMessageId = `ws-approval-${approval.id}`
+          return !existing.some(
+            (m) =>
+              m.id === wsMessageId ||
+              (m.type === 'approval_request' && m.metadata?.includes(approval.id))
+          )
+        })
+        .map((approval) => ({
+          id: `ws-approval-${approval.id}`,
+          execution_id: approval.execution_id,
+          project_id: projectId,
+          type: 'approval_request' as const,
+          content: approval.description,
+          metadata: JSON.stringify({
+            approvalId: approval.id,
+            action_type: approval.action_type,
+            target: approval.target,
+            risk_level: approval.risk_level,
+          }),
+          created_at: approval.requested_at,
+        }))
+
+      if (toAdd.length > 0) {
+        queryClient.setQueryData<ChatMessage[]>(messagesQueryKey(projectId), (old) => {
+          const curr = old ?? []
+          const trulyNew = toAdd.filter(
+            (a) =>
+              !curr.some(
+                (m) =>
+                  m.id === a.id ||
+                  (m.type === 'approval_request' && m.metadata?.includes(a.id.replace('ws-approval-', '')))
+              )
+          )
+          return trulyNew.length > 0 ? [...curr, ...trulyNew] : curr
+        })
+        setToastMessage(`미결 승인 요청이 복원되었습니다 (${toAdd.length}건)`)
+      }
+    }
   })
 
   const canStop = status === 'running' || status === 'approval_pending'
   const canRerun = !canStop && !submitting
+
+  const handleToastDismiss = useCallback(() => setToastMessage(null), [])
 
   const handleEditRerun = useCallback((text: string) => {
     setEditState((prev) => ({ text, key: (prev?.key ?? 0) + 1 }))
@@ -225,6 +286,10 @@ export default function ChatView() {
 
         <LogPanel executionId={executionId} open={logPanelOpen} />
       </div>
+
+      {toastMessage && (
+        <Toast message={toastMessage} onDismiss={handleToastDismiss} />
+      )}
     </div>
   )
 }
