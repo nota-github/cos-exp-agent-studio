@@ -398,7 +398,7 @@ export default function OnboardingWizard() {
                         {testResult.error ?? 'CLI 경로가 올바른지 확인하세요.'}
                       </p>
                       <p className="text-xs text-red-500/70 mt-2">
-                        "이전"을 눌러 1단계로 돌아가 경로를 수정하세요.
+                        "이전" 버튼으로 이전 단계로 돌아가 설정을 수정할 수 있습니다.
                       </p>
                     </div>
                   </>

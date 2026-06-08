@@ -1,11 +1,18 @@
 import { useState, useCallback } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useAppStore } from '../stores/appStore'
 import { useProjects } from '../api/projects'
 import { apiDelete } from '../api/client'
 import ExecutionStatusBadge from '../components/ExecutionStatusBadge'
 import LogPanel from '../components/LogPanel'
 import { useExecutionStatus } from '../hooks/useExecutionStatus'
+
+const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000/api'
+
+const SETTING_LABELS: Record<string, string> = {
+  cli_path: 'CLI 도구 경로',
+  api_key: 'API 키',
+}
 
 export default function ChatView() {
   const { id: projectId } = useParams<{ id: string }>()
@@ -23,6 +30,36 @@ export default function ChatView() {
   const status = useExecutionStatus(executionId)
 
   const [stopping, setStopping] = useState(false)
+  const [input, setInput] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [missingSettings, setMissingSettings] = useState<string[] | null>(null)
+
+  const handleSubmit = useCallback(async () => {
+    if (!input.trim() || !projectId || submitting) return
+    setMissingSettings(null)
+    setSubmitting(true)
+    try {
+      const res = await fetch(`${BASE_URL}/executions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, requestText: input.trim() }),
+      })
+      if (res.status === 400) {
+        const body = await res.json() as { error: string; missing?: string[] }
+        if (body.missing && body.missing.length > 0) {
+          setMissingSettings(body.missing)
+          return
+        }
+      }
+      if (res.ok) {
+        setInput('')
+      }
+    } catch {
+      // Network error — silent
+    } finally {
+      setSubmitting(false)
+    }
+  }, [input, projectId, submitting])
 
   const handleStop = useCallback(async () => {
     if (!executionId || stopping) return
@@ -78,8 +115,44 @@ export default function ChatView() {
         <div className="flex-1 flex items-center justify-center">
           <p className="text-gray-500 text-sm">채팅 메시지가 여기에 표시됩니다.</p>
         </div>
+        {missingSettings && missingSettings.length > 0 && (
+          <div className="px-6 py-2 bg-amber-950/40 border-t border-amber-800/30">
+            <p className="text-xs text-amber-400">
+              실행 전에{' '}
+              <span className="font-medium">
+                {missingSettings.map((f) => SETTING_LABELS[f] ?? f).join(', ')}
+              </span>{' '}
+              설정이 필요합니다.{' '}
+              <Link to="/settings" className="underline hover:text-amber-300 transition-colors">
+                설정 화면으로 이동
+              </Link>
+            </p>
+          </div>
+        )}
         <div className="px-6 py-4 border-t border-gray-800">
-          <div className="w-full h-10 bg-gray-900 rounded-lg border border-gray-700" />
+          <div className="flex items-end gap-2">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void handleSubmit()
+                }
+              }}
+              className="flex-1 bg-gray-900 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-gray-500 transition-colors"
+              rows={1}
+              placeholder="작업 요청을 입력하세요..."
+              disabled={submitting}
+            />
+            <button
+              onClick={() => void handleSubmit()}
+              disabled={!input.trim() || submitting}
+              className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+            >
+              전송
+            </button>
+          </div>
         </div>
         <LogPanel executionId={executionId} open={logPanelOpen} />
       </div>
