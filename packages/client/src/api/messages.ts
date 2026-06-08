@@ -5,7 +5,7 @@ export interface ChatMessage {
   id: string
   execution_id: string
   project_id: string
-  type: 'user' | 'agent' | 'system' | 'approval_request'
+  type: 'user' | 'agent' | 'system' | 'approval_request' | 'approval_result'
   content: string
   metadata: string | null
   created_at: string

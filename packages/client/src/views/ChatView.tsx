@@ -88,6 +88,17 @@ export default function ChatView() {
       })
     }
 
+    if (msg.type === 'approval_result' && typeof msg.executionId === 'string' && projectId) {
+      const incoming = msg.message as ChatMessage | undefined
+      if (incoming) {
+        queryClient.setQueryData<ChatMessage[]>(messagesQueryKey(projectId), (old) => {
+          const existing = old ?? []
+          if (existing.some((m) => m.id === incoming.id)) return existing
+          return [...existing, incoming]
+        })
+      }
+    }
+
     if (msg.type === 'connected' && projectId) {
       const pendingApprovals = Array.isArray(msg.pendingApprovals)
         ? (msg.pendingApprovals as Array<{
