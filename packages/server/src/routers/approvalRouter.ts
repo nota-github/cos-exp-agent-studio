@@ -23,6 +23,16 @@ const RespondSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
 })
 
+approvalRouter.get('/:id', (req: Request, res: Response) => {
+  const id = req.params.id as string
+  const approval = db.prepare('SELECT * FROM approvals WHERE id = ?').get(id) as ApprovalRow | undefined
+  if (!approval) {
+    res.status(404).json({ error: '승인 요청을 찾을 수 없습니다' })
+    return
+  }
+  res.json(approval)
+})
+
 approvalRouter.post('/:id/respond', (req: Request, res: Response) => {
   const id = req.params.id as string
 

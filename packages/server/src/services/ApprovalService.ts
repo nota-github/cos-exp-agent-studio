@@ -109,7 +109,12 @@ class ApprovalService {
         execRow.project_id,
         'approval_request',
         request.description,
-        JSON.stringify({ approvalId }),
+        JSON.stringify({
+          approvalId,
+          action_type: request.action_type,
+          target: request.target,
+          risk_level: request.risk_level,
+        }),
         now
       )
     }

@@ -50,6 +50,41 @@ export default function ChatView() {
         void queryClient.invalidateQueries({ queryKey: messagesQueryKey(projectId) })
       }
     }
+
+    if (msg.type === 'approval_request' && typeof msg.executionId === 'string' && projectId) {
+      const approval = msg.approval as {
+        id: string
+        action_type: string
+        target: string
+        risk_level: 'low' | 'medium' | 'high'
+        description: string
+        requested_at: string
+      }
+      const wsMessageId = `ws-approval-${approval.id}`
+      queryClient.setQueryData<ChatMessage[]>(messagesQueryKey(projectId), (old) => {
+        const existing = old ?? []
+        if (existing.some((m) => m.id === wsMessageId || (m.type === 'approval_request' && m.metadata?.includes(approval.id)))) {
+          return existing
+        }
+        return [
+          ...existing,
+          {
+            id: wsMessageId,
+            execution_id: msg.executionId as string,
+            project_id: projectId,
+            type: 'approval_request' as const,
+            content: approval.description,
+            metadata: JSON.stringify({
+              approvalId: approval.id,
+              action_type: approval.action_type,
+              target: approval.target,
+              risk_level: approval.risk_level,
+            }),
+            created_at: approval.requested_at,
+          },
+        ]
+      })
+    }
   })
 
   const canStop = status === 'running' || status === 'approval_pending'
