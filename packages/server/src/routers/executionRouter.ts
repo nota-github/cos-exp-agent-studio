@@ -12,6 +12,7 @@ const executionRouter = Router()
 const adapter = new OpenClawAdapter()
 
 const stdoutAccumulator = new Map<string, string[]>()
+const lastStderrChunk = new Map<string, string>()
 
 processManager.on('data', (executionId: string, chunk: string, source: 'stdout' | 'stderr') => {
   const now = new Date().toISOString()
@@ -24,6 +25,8 @@ processManager.on('data', (executionId: string, chunk: string, source: 'stdout' 
     const lines = stdoutAccumulator.get(executionId) ?? []
     lines.push(...chunk.split('\n'))
     stdoutAccumulator.set(executionId, lines)
+  } else {
+    lastStderrChunk.set(executionId, chunk)
   }
 
   broadcast(executionId, { type: 'log', executionId, level, category: source, content: chunk, timestamp: now })
@@ -43,11 +46,13 @@ processManager.on('exit', (executionId: string, code: number | null, signal: Nod
 
   const lines = stdoutAccumulator.get(executionId) ?? []
   stdoutAccumulator.delete(executionId)
+  const lastErr = lastStderrChunk.get(executionId) ?? null
+  lastStderrChunk.delete(executionId)
   const { summary } = adapter.parseResult(lines)
 
   db.prepare(
-    'UPDATE executions SET status = ?, completed_at = ?, duration_ms = ?, summary = ? WHERE id = ?'
-  ).run(status, now, durationMs, summary, executionId)
+    'UPDATE executions SET status = ?, completed_at = ?, duration_ms = ?, summary = ?, error_message = ? WHERE id = ?'
+  ).run(status, now, durationMs, summary, status === 'failed' ? lastErr : null, executionId)
 
   if (execRow) {
     db.prepare('UPDATE projects SET last_run_at = ?, last_status = ? WHERE id = ?').run(
@@ -57,6 +62,7 @@ processManager.on('exit', (executionId: string, code: number | null, signal: Nod
     )
   }
 
+  broadcast(executionId, { type: 'status', executionId, status })
   broadcast(executionId, { type: 'execution_complete', executionId, status, summary })
 })
 
@@ -124,6 +130,7 @@ executionRouter.post('/', (req: Request, res: Response) => {
     return
   }
 
+  broadcast(executionId, { type: 'status', executionId, status: 'running' })
   res.status(201).json({ executionId })
 })
 
