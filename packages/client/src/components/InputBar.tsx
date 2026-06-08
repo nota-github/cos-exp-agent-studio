@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
 const SETTING_LABELS: Record<string, string> = {
@@ -15,9 +15,11 @@ interface Props {
   canStop: boolean
   isSubmitting: boolean
   missingSettings: string[] | null
+  prefillText?: string
+  prefillKey?: number
 }
 
-export default function InputBar({ onSubmit, onStop, canStop, isSubmitting, missingSettings }: Props) {
+export default function InputBar({ onSubmit, onStop, canStop, isSubmitting, missingSettings, prefillText, prefillKey }: Props) {
   const [value, setValue] = useState('')
   const [stopping, setStopping] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -29,6 +31,17 @@ export default function InputBar({ onSubmit, onStop, canStop, isSubmitting, miss
     const maxHeight = LINE_HEIGHT_PX * MAX_ROWS + 16
     el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`
   }, [])
+
+  useEffect(() => {
+    if (!prefillKey) return
+    const text = prefillText ?? ''
+    setValue(text)
+    if (textareaRef.current) {
+      textareaRef.current.value = text
+      resize(textareaRef.current)
+      textareaRef.current.focus()
+    }
+  }, [prefillKey, prefillText, resize])
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {

@@ -38,6 +38,7 @@ export default function ChatView() {
 
   const [submitting, setSubmitting] = useState(false)
   const [missingSettings, setMissingSettings] = useState<string[] | null>(null)
+  const [editState, setEditState] = useState<{ text: string; key: number } | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -52,6 +53,11 @@ export default function ChatView() {
   })
 
   const canStop = status === 'running' || status === 'approval_pending'
+  const canRerun = !canStop && !submitting
+
+  const handleEditRerun = useCallback((text: string) => {
+    setEditState((prev) => ({ text, key: (prev?.key ?? 0) + 1 }))
+  }, [])
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -158,7 +164,13 @@ export default function ChatView() {
           {!messagesLoading && messages && messages.length > 0 && (
             <div className="space-y-1">
               {messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  onRerun={msg.type === 'user' ? () => void handleSubmit(msg.content) : undefined}
+                  onEditRerun={msg.type === 'user' ? handleEditRerun : undefined}
+                  canRerun={canRerun}
+                />
               ))}
             </div>
           )}
@@ -172,6 +184,8 @@ export default function ChatView() {
           canStop={canStop}
           isSubmitting={submitting}
           missingSettings={missingSettings}
+          prefillText={editState?.text}
+          prefillKey={editState?.key}
         />
 
         <LogPanel executionId={executionId} open={logPanelOpen} />

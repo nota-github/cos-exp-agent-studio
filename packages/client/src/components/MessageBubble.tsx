@@ -7,9 +7,12 @@ interface FileChangeMeta {
 
 interface Props {
   message: ChatMessage
+  onRerun?: () => void
+  onEditRerun?: (text: string) => void
+  canRerun?: boolean
 }
 
-export default function MessageBubble({ message }: Props) {
+export default function MessageBubble({ message, onRerun, onEditRerun, canRerun = true }: Props) {
   const { type, content, metadata } = message
 
   if (type === 'system') {
@@ -23,8 +26,27 @@ export default function MessageBubble({ message }: Props) {
   }
 
   if (type === 'user') {
+    const hasActions = onRerun != null || onEditRerun != null
     return (
-      <div className="flex justify-end px-4 py-1">
+      <div className="relative flex justify-end px-4 py-1 group">
+        {hasActions && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+            <button
+              onClick={() => onEditRerun?.(content)}
+              disabled={!canRerun}
+              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-gray-800/60 transition-colors whitespace-nowrap"
+            >
+              수정 후 실행
+            </button>
+            <button
+              onClick={() => onRerun?.()}
+              disabled={!canRerun}
+              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-gray-800/60 transition-colors whitespace-nowrap"
+            >
+              다시 실행
+            </button>
+          </div>
+        )}
         <div className="max-w-[70%]">
           <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">
             {content}
