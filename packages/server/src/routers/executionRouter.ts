@@ -20,6 +20,12 @@ function redact(text: string): string {
   return text.replace(API_KEY_PATTERN, '[REDACTED]')
 }
 
+const LOG_RETENTION_LIMIT = 10_000
+const LOG_TRIM_AMOUNT = 500
+const EXECUTION_RETENTION_LIMIT = 100
+
+const logCounts = new Map<string, number>()
+
 interface LogEntry {
   id: string
   timestamp: string
@@ -44,9 +50,22 @@ processManager.on('data', (executionId: string, chunk: string, source: 'stdout' 
   const redacted = redact(chunk)
   const now = new Date().toISOString()
   const level = source === 'stderr' ? 'error' : 'info'
+
+  const currentCount = logCounts.get(executionId) ?? 0
+  if (currentCount >= LOG_RETENTION_LIMIT) {
+    db.prepare(
+      'DELETE FROM logs WHERE id IN (SELECT id FROM logs WHERE execution_id = ? ORDER BY timestamp ASC LIMIT ?)'
+    ).run(executionId, LOG_TRIM_AMOUNT)
+    db.prepare(
+      'INSERT INTO logs (id, execution_id, timestamp, level, category, content) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(randomUUID(), executionId, now, 'warn', 'system', '[이전 10000줄 이상의 로그가 잘렸습니다]')
+    logCounts.set(executionId, currentCount - LOG_TRIM_AMOUNT + 1)
+  }
+
   db.prepare(
     'INSERT INTO logs (id, execution_id, timestamp, level, category, content) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(randomUUID(), executionId, now, level, source, redacted)
+  logCounts.set(executionId, (logCounts.get(executionId) ?? 0) + 1)
 
   if (source === 'stdout') {
     const lines = stdoutAccumulator.get(executionId) ?? []
@@ -94,6 +113,7 @@ processManager.on('exit', (executionId: string, code: number | null, signal: Nod
   stdoutAccumulator.delete(executionId)
   const lastErr = lastStderrChunk.get(executionId) ?? null
   lastStderrChunk.delete(executionId)
+  logCounts.delete(executionId)
   const { summary } = adapter.parseResult(lines)
 
   db.prepare(
@@ -155,6 +175,21 @@ executionRouter.post('/', (req: Request, res: Response) => {
   db.prepare(
     'INSERT INTO executions (id, project_id, request_text, status, started_at) VALUES (?, ?, ?, ?, ?)'
   ).run(executionId, projectId, requestText, 'pending', now)
+
+  const execCount = (
+    db.prepare('SELECT COUNT(*) as cnt FROM executions WHERE project_id = ?').get(projectId) as { cnt: number }
+  ).cnt
+  if (execCount > EXECUTION_RETENTION_LIMIT) {
+    const toDelete = db
+      .prepare('SELECT id FROM executions WHERE project_id = ? ORDER BY started_at ASC LIMIT ?')
+      .all(projectId, execCount - EXECUTION_RETENTION_LIMIT) as { id: string }[]
+    for (const exec of toDelete) {
+      db.prepare('DELETE FROM logs WHERE execution_id = ?').run(exec.id)
+      db.prepare('DELETE FROM messages WHERE execution_id = ?').run(exec.id)
+      db.prepare('DELETE FROM approvals WHERE execution_id = ?').run(exec.id)
+      db.prepare('DELETE FROM executions WHERE id = ?').run(exec.id)
+    }
+  }
 
   const settings = settingsManager.getSettings()
   const { command, args } = buildSpawnArgs(settings.cli_path!, requestText, project.path, options)
