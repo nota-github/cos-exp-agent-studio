@@ -14,25 +14,71 @@ const adapter = new OpenClawAdapter()
 const stdoutAccumulator = new Map<string, string[]>()
 const lastStderrChunk = new Map<string, string>()
 
+const API_KEY_PATTERN = /sk-ant-[A-Za-z0-9-]+/g
+
+function redact(text: string): string {
+  return text.replace(API_KEY_PATTERN, '[REDACTED]')
+}
+
+interface LogEntry {
+  id: string
+  timestamp: string
+  level: 'info' | 'warn' | 'error'
+  category: 'stdout' | 'stderr' | 'file_change' | 'command'
+  content: string
+}
+
+const logBatch = new Map<string, LogEntry[]>()
+const batchTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function flushLogBatch(executionId: string): void {
+  const entries = logBatch.get(executionId)
+  logBatch.delete(executionId)
+  batchTimers.delete(executionId)
+  if (entries && entries.length > 0) {
+    broadcast(executionId, { type: 'log', executionId, data: entries })
+  }
+}
+
 processManager.on('data', (executionId: string, chunk: string, source: 'stdout' | 'stderr') => {
+  const redacted = redact(chunk)
   const now = new Date().toISOString()
   const level = source === 'stderr' ? 'error' : 'info'
   db.prepare(
     'INSERT INTO logs (id, execution_id, timestamp, level, category, content) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(randomUUID(), executionId, now, level, source, chunk)
+  ).run(randomUUID(), executionId, now, level, source, redacted)
 
   if (source === 'stdout') {
     const lines = stdoutAccumulator.get(executionId) ?? []
-    lines.push(...chunk.split('\n'))
+    lines.push(...redacted.split('\n'))
     stdoutAccumulator.set(executionId, lines)
   } else {
-    lastStderrChunk.set(executionId, chunk)
+    lastStderrChunk.set(executionId, redacted)
   }
 
-  broadcast(executionId, { type: 'log', executionId, level, category: source, content: chunk, timestamp: now })
+  const entry: LogEntry = {
+    id: randomUUID(),
+    timestamp: now,
+    level,
+    category: source,
+    content: redacted,
+  }
+  const batch = logBatch.get(executionId) ?? []
+  batch.push(entry)
+  logBatch.set(executionId, batch)
+
+  if (!batchTimers.has(executionId)) {
+    batchTimers.set(executionId, setTimeout(() => flushLogBatch(executionId), 16))
+  }
 })
 
 processManager.on('exit', (executionId: string, code: number | null, signal: NodeJS.Signals | null) => {
+  if (batchTimers.has(executionId)) {
+    clearTimeout(batchTimers.get(executionId)!)
+    batchTimers.delete(executionId)
+  }
+  flushLogBatch(executionId)
+
   const now = new Date().toISOString()
   const status = signal ? 'cancelled' : code === 0 ? 'completed' : 'failed'
 

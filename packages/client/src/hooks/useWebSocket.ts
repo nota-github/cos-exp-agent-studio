@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { useLogStore, type LogEntry } from '../stores/logStore'
 
 export type WsMessage = Record<string, unknown>
 type MessageHandler = (message: WsMessage) => void
@@ -50,6 +51,13 @@ function connect(): void {
       const message = JSON.parse(event.data as string) as WsMessage
       for (const handler of messageHandlers) {
         handler(message)
+      }
+      if (
+        message.type === 'log' &&
+        typeof message.executionId === 'string' &&
+        Array.isArray(message.data)
+      ) {
+        useLogStore.getState().appendLogs(message.executionId, message.data as LogEntry[])
       }
     } catch {
       // ignore malformed messages
