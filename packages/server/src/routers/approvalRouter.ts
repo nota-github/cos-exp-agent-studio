@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { db } from '../db/index.js'
@@ -92,6 +93,46 @@ approvalRouter.post('/:id/respond', (req: Request, res: Response) => {
 
     approvalService.removePending(approval.execution_id)
     processManager.kill(approval.execution_id)
+  }
+
+  // Insert approval_result message and broadcast for real-time chat display
+  const execRow = db
+    .prepare('SELECT project_id FROM executions WHERE id = ?')
+    .get(approval.execution_id) as { project_id: string } | undefined
+
+  if (execRow) {
+    const msgId = randomUUID()
+    const resultMeta = JSON.stringify({
+      approvalId: id,
+      decision,
+      risk_level: approval.risk_level,
+      action_type: approval.action_type,
+      target: approval.target,
+    })
+    db.prepare(
+      'INSERT INTO messages (id, execution_id, project_id, type, content, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      msgId,
+      approval.execution_id,
+      execRow.project_id,
+      'approval_result',
+      `${decision}: ${approval.target}`,
+      resultMeta,
+      now
+    )
+    broadcast(approval.execution_id, {
+      type: 'approval_result',
+      executionId: approval.execution_id,
+      message: {
+        id: msgId,
+        execution_id: approval.execution_id,
+        project_id: execRow.project_id,
+        type: 'approval_result',
+        content: `${decision}: ${approval.target}`,
+        metadata: resultMeta,
+        created_at: now,
+      },
+    })
   }
 
   const updated = db

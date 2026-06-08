@@ -44,6 +44,35 @@ export default function MessageBubble({ message, onRerun, onEditRerun, canRerun 
     )
   }
 
+  if (type === 'approval_result') {
+    let meta: { decision?: string; target?: string } | null = null
+    if (metadata) {
+      try {
+        meta = JSON.parse(metadata) as { decision?: string; target?: string }
+      } catch {
+        // ignore malformed metadata
+      }
+    }
+    const decision = meta?.decision ?? (content.startsWith('approved') ? 'approved' : 'rejected')
+    const isApproved = decision === 'approved'
+    const rawTarget = meta?.target ?? content.replace(/^(approved|rejected):\s*/, '')
+    const truncatedTarget = rawTarget.length > 50 ? rawTarget.slice(0, 50) + '…' : rawTarget
+    return (
+      <div className="flex justify-center py-2 px-4">
+        <span
+          className={`px-3 py-1 text-xs rounded-full border ${
+            isApproved
+              ? 'text-green-400 bg-green-900/20 border-green-800/40'
+              : 'text-red-400 bg-red-900/20 border-red-800/40'
+          }`}
+        >
+          {isApproved ? '✓ 승인됨' : '✗ 거절됨'}
+          {truncatedTarget ? `: ${truncatedTarget}` : ''}
+        </span>
+      </div>
+    )
+  }
+
   if (type === 'system') {
     return (
       <div className="flex justify-center py-2 px-4">

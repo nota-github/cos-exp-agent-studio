@@ -50,6 +50,46 @@ export default function ExecutionDetailView() {
   const agentMessage = messages?.find((m) => m.type === 'agent')
   const fileChangeLogs = (logs ?? []).filter((l) => l.category === 'file_change')
 
+  interface ApprovalHistoryEntry {
+    approvalId: string
+    action_type: string
+    target: string
+    risk_level: 'low' | 'medium' | 'high'
+    decision: 'approved' | 'rejected' | null
+  }
+
+  const approvalHistory: ApprovalHistoryEntry[] = (() => {
+    if (!messages) return []
+    const requests = messages.filter((m) => m.type === 'approval_request')
+    const results = messages.filter((m) => m.type === 'approval_result')
+    return requests.map((req) => {
+      let reqMeta: { approvalId?: string; action_type?: string; target?: string; risk_level?: string } = {}
+      try { reqMeta = req.metadata ? (JSON.parse(req.metadata) as typeof reqMeta) : {} } catch {}
+      const approvalId = reqMeta.approvalId ?? req.id
+      const resultMsg = results.find((r) => {
+        try {
+          const m = r.metadata ? (JSON.parse(r.metadata) as { approvalId?: string }) : {}
+          return m.approvalId === approvalId
+        } catch { return false }
+      })
+      let decision: 'approved' | 'rejected' | null = null
+      if (resultMsg) {
+        try {
+          const rm = resultMsg.metadata ? (JSON.parse(resultMsg.metadata) as { decision?: string }) : {}
+          if (rm.decision === 'approved' || rm.decision === 'rejected') decision = rm.decision
+          else decision = resultMsg.content.startsWith('approved') ? 'approved' : 'rejected'
+        } catch {}
+      }
+      return {
+        approvalId,
+        action_type: reqMeta.action_type ?? 'command_exec',
+        target: reqMeta.target ?? req.content.slice(0, 100),
+        risk_level: (reqMeta.risk_level as 'low' | 'medium' | 'high') ?? 'medium',
+        decision,
+      }
+    })
+  })()
+
   const handleRerun = useCallback(async () => {
     if (!execution || rerunning) return
     setRerunning(true)
@@ -182,6 +222,60 @@ export default function ExecutionDetailView() {
                     </div>
                   ))}
                 </div>
+              </section>
+            )}
+
+            {/* Approval history */}
+            {messages && (
+              <section>
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                  승인 내역
+                </div>
+                {approvalHistory.length === 0 ? (
+                  <p className="text-xs text-gray-600 italic">이 실행에서 승인 요청이 없었습니다</p>
+                ) : (
+                  <div className="space-y-2">
+                    {approvalHistory.map((entry) => {
+                      const RISK_LABEL: Record<string, string> = { low: '낮음', medium: '보통', high: '높음' }
+                      const RISK_CLASS: Record<string, string> = {
+                        low: 'bg-blue-900/30 text-blue-300 border-blue-800/40',
+                        medium: 'bg-amber-900/30 text-amber-300 border-amber-800/40',
+                        high: 'bg-red-900/30 text-red-300 border-red-800/40',
+                      }
+                      const ACTION_LABELS: Record<string, string> = {
+                        file_modify: '파일 수정',
+                        file_create: '파일 생성',
+                        file_delete: '파일 삭제',
+                        package_install: '패키지 설치',
+                        command_exec: '명령 실행',
+                      }
+                      const riskClass = RISK_CLASS[entry.risk_level] ?? RISK_CLASS['medium']
+                      return (
+                        <div
+                          key={entry.approvalId}
+                          className="flex items-center gap-3 text-xs bg-gray-900 rounded-lg px-3 py-2"
+                        >
+                          <span className={`px-1.5 py-0.5 rounded text-xs border flex-shrink-0 ${riskClass}`}>
+                            {RISK_LABEL[entry.risk_level] ?? entry.risk_level}
+                          </span>
+                          <span className="text-gray-400 flex-shrink-0">
+                            {ACTION_LABELS[entry.action_type] ?? entry.action_type}
+                          </span>
+                          <code className="flex-1 font-mono text-gray-300 truncate">
+                            {entry.target}
+                          </code>
+                          {entry.decision === null ? (
+                            <span className="text-gray-500 flex-shrink-0">대기 중</span>
+                          ) : entry.decision === 'approved' ? (
+                            <span className="text-green-400 flex-shrink-0 font-medium">승인됨 ✓</span>
+                          ) : (
+                            <span className="text-red-400 flex-shrink-0 font-medium">거절됨 ✗</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </section>
             )}
 
