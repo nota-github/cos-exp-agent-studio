@@ -5,6 +5,7 @@ import type { LogEntry as LogEntryType } from '../stores/logStore'
 import LogEntry from './LogEntry'
 
 const VIRTUAL_THRESHOLD = 200
+const EMPTY_LOGS: LogEntryType[] = []
 
 interface Props {
   executionId: string | null
@@ -69,7 +70,7 @@ function VirtualSection({ entries }: VirtualSectionProps) {
 }
 
 export default function LogPanel({ executionId, open }: Props) {
-  const logs = useLogStore((s) => (executionId ? (s.logs[executionId] ?? []) : []))
+  const logs = useLogStore((s) => (executionId ? (s.logs[executionId] ?? EMPTY_LOGS) : EMPTY_LOGS))
   const scrollRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
 

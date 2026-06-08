@@ -1,8 +1,16 @@
 import type { ChatMessage } from '../api/messages'
+import ApprovalCard from './ApprovalCard'
 
 interface FileChangeMeta {
   fileChanges?: string[]
   commandsRun?: string[]
+}
+
+interface ApprovalMeta {
+  approvalId: string
+  action_type?: string
+  target?: string
+  risk_level?: 'low' | 'medium' | 'high'
 }
 
 interface Props {
@@ -14,6 +22,27 @@ interface Props {
 
 export default function MessageBubble({ message, onRerun, onEditRerun, canRerun = true }: Props) {
   const { type, content, metadata } = message
+
+  if (type === 'approval_request') {
+    let approvalMeta: ApprovalMeta | null = null
+    if (metadata) {
+      try {
+        approvalMeta = JSON.parse(metadata) as ApprovalMeta
+      } catch {
+        // ignore malformed metadata
+      }
+    }
+    if (!approvalMeta?.approvalId) return null
+    return (
+      <ApprovalCard
+        approvalId={approvalMeta.approvalId}
+        action_type={approvalMeta.action_type}
+        target={approvalMeta.target}
+        risk_level={approvalMeta.risk_level}
+        description={content}
+      />
+    )
+  }
 
   if (type === 'system') {
     return (
