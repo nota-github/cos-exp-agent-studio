@@ -264,7 +264,7 @@ export default function ChatView() {
                 </svg>
               </div>
               <p className="text-gray-500 text-sm">아직 대화 내역이 없습니다</p>
-              <p className="text-gray-600 text-xs mt-1">아래 입력창에 작업을 요청해 보세요</p>
+              <p className="text-gray-600 text-xs mt-1">아래 입력창에 작업 내용을 입력하면 에이전트가 실행됩니다</p>
             </div>
           )}
 
