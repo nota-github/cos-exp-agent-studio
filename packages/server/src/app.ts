@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express'
 import { createServer } from 'http'
 import { healthRouter } from './routers/healthRouter.js'
 import { closeDb } from './db/index.js'
+import { setupWebSocket } from './websocket/WebSocketServer.js'
 
 const app = express()
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000
@@ -23,6 +24,8 @@ app.use(express.json())
 app.use('/api', healthRouter)
 
 const server = createServer(app)
+
+setupWebSocket(server)
 
 server.listen(PORT, () => {
   console.log(`[server] Agent Studio listening on http://localhost:${PORT}`)
