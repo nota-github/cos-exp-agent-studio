@@ -1,5 +1,18 @@
 import { WebSocket, WebSocketServer as WsServer } from 'ws'
 import type { Server } from 'http'
+import { db } from '../db/index.js'
+
+interface PendingApprovalRow {
+  id: string
+  execution_id: string
+  action_type: string
+  target: string
+  risk_level: string
+  description: string
+  status: string
+  requested_at: string
+  decided_at: string | null
+}
 
 // executionId → subscribed clients
 const subscriptions = new Map<string, Set<WebSocket>>()
@@ -14,6 +27,11 @@ export function setupWebSocket(server: Server): void {
   wss.on('connection', (ws) => {
     console.log('[ws] client connected')
     clientSubs.set(ws, new Set())
+
+    const pendingApprovals = db
+      .prepare('SELECT * FROM approvals WHERE status = ?')
+      .all('pending') as PendingApprovalRow[]
+    ws.send(JSON.stringify({ type: 'connected', pendingApprovals }))
 
     ws.on('message', (data) => {
       try {
