@@ -8,6 +8,7 @@ import { setupWebSocket } from './websocket/WebSocketServer.js'
 import { cleanupOrphanedExecutions } from './services/ProcessManager.js'
 import { executionRouter } from './routers/executionRouter.js'
 import { settingsRouter } from './routers/settingsRouter.js'
+import { approvalRouter } from './routers/approvalRouter.js'
 import { approvalService } from './services/ApprovalService.js'
 
 const app = express()
@@ -32,6 +33,7 @@ app.use('/api/projects', projectRouter)
 app.use('/api/filesystem', filesystemRouter)
 app.use('/api/executions', executionRouter)
 app.use('/api/settings', settingsRouter)
+app.use('/api/approvals', approvalRouter)
 
 const server = createServer(app)
 
