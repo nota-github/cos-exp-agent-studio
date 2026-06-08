@@ -30,3 +30,16 @@ export async function apiDelete(path: string): Promise<void> {
   const res = await fetch(`${BASE_URL}${path}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
 }
+
+export async function apiPostJson<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(errorBody.error ?? `POST ${path} failed: ${res.status}`)
+  }
+  return res.json() as Promise<T>
+}

@@ -1,15 +1,13 @@
-import { useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import { useProjects } from '../api/projects'
 import ProjectRow, { ProjectRowSkeleton } from '../components/ProjectRow'
+import AddProjectModal from '../components/AddProjectModal'
 
 export default function ProjectInboxView() {
-  const navigate = useNavigate()
+  const [modalOpen, setModalOpen] = useState(false)
   const { data: projects, isLoading, isError } = useProjects()
 
-  const handleAddProject = () => {
-    // story-2.4: AddProjectModal will replace this navigation
-    navigate('/projects/new')
-  }
+  const handleAddProject = () => setModalOpen(true)
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100">
@@ -112,6 +110,7 @@ export default function ProjectInboxView() {
             projects.map(project => <ProjectRow key={project.id} project={project} />)}
         </div>
       </div>
+      <AddProjectModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
     </div>
   )
 }
