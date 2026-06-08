@@ -1,11 +1,16 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../stores/appStore'
 import { useProjects } from '../api/projects'
 import { apiDelete } from '../api/client'
 import ExecutionStatusBadge from '../components/ExecutionStatusBadge'
 import LogPanel from '../components/LogPanel'
+import Sidebar from '../components/Sidebar'
+import MessageBubble from '../components/MessageBubble'
 import { useExecutionStatus } from '../hooks/useExecutionStatus'
+import { useMessages, messagesQueryKey } from '../api/messages'
+import { useWsMessage } from '../hooks/useWebSocket'
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000/api'
 
@@ -17,6 +22,7 @@ const SETTING_LABELS: Record<string, string> = {
 export default function ChatView() {
   const { id: projectId } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
+  const queryClient = useQueryClient()
 
   const { data: projects } = useProjects()
   const project = projects?.find((p) => p.id === projectId)
@@ -28,11 +34,28 @@ export default function ChatView() {
   const executionId = currentExecutionId ?? searchParams.get('executionId')
 
   const status = useExecutionStatus(executionId)
+  const { data: messages, isLoading: messagesLoading } = useMessages(projectId)
+
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   const [stopping, setStopping] = useState(false)
   const [input, setInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [missingSettings, setMissingSettings] = useState<string[] | null>(null)
+
+  // Auto-scroll to newest message on load and new arrivals
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  // On execution_complete, refetch messages so agent/system message appears
+  useWsMessage((msg) => {
+    if (msg.type === 'execution_complete' && typeof msg.executionId === 'string') {
+      if (projectId) {
+        void queryClient.invalidateQueries({ queryKey: messagesQueryKey(projectId) })
+      }
+    }
+  })
 
   const handleSubmit = useCallback(async () => {
     if (!input.trim() || !projectId || submitting) return
@@ -53,13 +76,15 @@ export default function ChatView() {
       }
       if (res.ok) {
         setInput('')
+        // Refetch messages to show the user message immediately
+        void queryClient.invalidateQueries({ queryKey: messagesQueryKey(projectId) })
       }
     } catch {
       // Network error — silent
     } finally {
       setSubmitting(false)
     }
-  }, [input, projectId, submitting])
+  }, [input, projectId, submitting, queryClient])
 
   const handleStop = useCallback(async () => {
     if (!executionId || stopping) return
@@ -77,17 +102,11 @@ export default function ChatView() {
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100">
-      <aside className="w-64 border-r border-gray-800 flex-shrink-0 flex flex-col">
-        <div className="px-4 py-4 border-b border-gray-800">
-          <span className="text-sm font-semibold text-gray-300">프로젝트</span>
-        </div>
-        <div className="flex-1" />
-        <div className="px-4 py-3 border-t border-gray-800">
-          <span className="text-xs text-gray-600">설정</span>
-        </div>
-      </aside>
+      <Sidebar activeProjectId={projectId} />
+
       <div className="relative flex flex-col flex-1 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-gray-100">
               {project?.name ?? '로딩 중...'}
@@ -112,11 +131,51 @@ export default function ChatView() {
             </button>
           </div>
         </div>
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-gray-500 text-sm">채팅 메시지가 여기에 표시됩니다.</p>
+
+        {/* Message area */}
+        <div className="flex-1 overflow-y-auto py-4">
+          {messagesLoading && (
+            <div className="flex items-center justify-center h-32">
+              <p className="text-gray-600 text-sm">메시지를 불러오는 중...</p>
+            </div>
+          )}
+
+          {!messagesLoading && messages && messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center px-8">
+              <div className="w-12 h-12 bg-gray-800 rounded-2xl flex items-center justify-center mb-3">
+                <svg
+                  className="w-6 h-6 text-gray-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                  />
+                </svg>
+              </div>
+              <p className="text-gray-500 text-sm">아직 대화 내역이 없습니다</p>
+              <p className="text-gray-600 text-xs mt-1">아래 입력창에 작업을 요청해 보세요</p>
+            </div>
+          )}
+
+          {!messagesLoading && messages && messages.length > 0 && (
+            <div className="space-y-1">
+              {messages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))}
+            </div>
+          )}
+
+          <div ref={bottomRef} />
         </div>
+
+        {/* Missing settings warning */}
         {missingSettings && missingSettings.length > 0 && (
-          <div className="px-6 py-2 bg-amber-950/40 border-t border-amber-800/30">
+          <div className="px-6 py-2 bg-amber-950/40 border-t border-amber-800/30 flex-shrink-0">
             <p className="text-xs text-amber-400">
               실행 전에{' '}
               <span className="font-medium">
@@ -129,7 +188,9 @@ export default function ChatView() {
             </p>
           </div>
         )}
-        <div className="px-6 py-4 border-t border-gray-800">
+
+        {/* Input bar */}
+        <div className="px-6 py-4 border-t border-gray-800 flex-shrink-0">
           <div className="flex items-end gap-2">
             <textarea
               value={input}
@@ -154,6 +215,7 @@ export default function ChatView() {
             </button>
           </div>
         </div>
+
         <LogPanel executionId={executionId} open={logPanelOpen} />
       </div>
     </div>
