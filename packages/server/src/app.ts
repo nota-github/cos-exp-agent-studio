@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express'
 import { createServer } from 'http'
 import { healthRouter } from './routers/healthRouter.js'
+import { projectRouter } from './routers/projectRouter.js'
 import { closeDb } from './db/index.js'
 import { setupWebSocket } from './websocket/WebSocketServer.js'
 
@@ -22,6 +23,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use(express.json())
 
 app.use('/api', healthRouter)
+app.use('/api/projects', projectRouter)
 
 const server = createServer(app)
 
