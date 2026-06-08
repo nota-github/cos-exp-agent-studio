@@ -1,23 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useParams, useSearchParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../stores/appStore'
 import { useProjects } from '../api/projects'
 import { apiDelete } from '../api/client'
+import { createExecution } from '../api/executions'
 import ExecutionStatusBadge from '../components/ExecutionStatusBadge'
 import LogPanel from '../components/LogPanel'
 import Sidebar from '../components/Sidebar'
 import MessageBubble from '../components/MessageBubble'
+import InputBar from '../components/InputBar'
 import { useExecutionStatus } from '../hooks/useExecutionStatus'
 import { useMessages, messagesQueryKey } from '../api/messages'
+import type { ChatMessage } from '../api/messages'
 import { useWsMessage } from '../hooks/useWebSocket'
-
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000/api'
-
-const SETTING_LABELS: Record<string, string> = {
-  cli_path: 'CLI 도구 경로',
-  api_key: 'API 키',
-}
 
 export default function ChatView() {
   const { id: projectId } = useParams<{ id: string }>()
@@ -28,9 +24,11 @@ export default function ChatView() {
   const project = projects?.find((p) => p.id === projectId)
 
   const currentExecutionId = useAppStore((s) => s.currentExecutionId)
+  const setCurrentExecutionId = useAppStore((s) => s.setCurrentExecutionId)
   const logPanelOpen = useAppStore((s) => s.logPanelOpen)
   const setLogPanelOpen = useAppStore((s) => s.setLogPanelOpen)
-  // URL param allows testing before story-6.3 wires task submission via Zustand
+
+  // URL param allows testing execution status without a full submit flow
   const executionId = currentExecutionId ?? searchParams.get('executionId')
 
   const status = useExecutionStatus(executionId)
@@ -38,17 +36,13 @@ export default function ChatView() {
 
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  const [stopping, setStopping] = useState(false)
-  const [input, setInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [missingSettings, setMissingSettings] = useState<string[] | null>(null)
 
-  // Auto-scroll to newest message on load and new arrivals
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // On execution_complete, refetch messages so agent/system message appears
   useWsMessage((msg) => {
     if (msg.type === 'execution_complete' && typeof msg.executionId === 'string') {
       if (projectId) {
@@ -57,48 +51,58 @@ export default function ChatView() {
     }
   })
 
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim() || !projectId || submitting) return
-    setMissingSettings(null)
-    setSubmitting(true)
-    try {
-      const res = await fetch(`${BASE_URL}/executions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, requestText: input.trim() }),
-      })
-      if (res.status === 400) {
-        const body = await res.json() as { error: string; missing?: string[] }
-        if (body.missing && body.missing.length > 0) {
-          setMissingSettings(body.missing)
+  const canStop = status === 'running' || status === 'approval_pending'
+
+  const handleSubmit = useCallback(
+    async (text: string) => {
+      if (!projectId || submitting) return
+      setMissingSettings(null)
+      setSubmitting(true)
+
+      // Optimistic: show user message immediately before server round-trip
+      queryClient.setQueryData<ChatMessage[]>(messagesQueryKey(projectId), (old) => [
+        ...(old ?? []),
+        {
+          id: `optimistic-${Date.now()}`,
+          execution_id: '',
+          project_id: projectId,
+          type: 'user' as const,
+          content: text,
+          metadata: null,
+          created_at: new Date().toISOString(),
+        },
+      ])
+
+      try {
+        const result = await createExecution(projectId, text)
+        if (!result.ok) {
+          if (result.error.type === 'missing_settings') {
+            setMissingSettings(result.error.missing)
+          }
+          // Roll back optimistic message on error
+          void queryClient.invalidateQueries({ queryKey: messagesQueryKey(projectId) })
           return
         }
-      }
-      if (res.ok) {
-        setInput('')
-        // Refetch messages to show the user message immediately
+        setCurrentExecutionId(result.executionId)
+        // Replace optimistic message with server-confirmed message
         void queryClient.invalidateQueries({ queryKey: messagesQueryKey(projectId) })
+      } catch {
+        void queryClient.invalidateQueries({ queryKey: messagesQueryKey(projectId) })
+      } finally {
+        setSubmitting(false)
       }
-    } catch {
-      // Network error — silent
-    } finally {
-      setSubmitting(false)
-    }
-  }, [input, projectId, submitting, queryClient])
+    },
+    [projectId, submitting, queryClient, setCurrentExecutionId]
+  )
 
   const handleStop = useCallback(async () => {
-    if (!executionId || stopping) return
-    setStopping(true)
+    if (!executionId) return
     try {
       await apiDelete(`/executions/${executionId}`)
     } catch {
       // Status transition arrives via WebSocket regardless
-    } finally {
-      setTimeout(() => setStopping(false), 1000)
     }
-  }, [executionId, stopping])
-
-  const canStop = status === 'running' || status === 'approval_pending'
+  }, [executionId])
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100">
@@ -113,23 +117,12 @@ export default function ChatView() {
             </span>
             <ExecutionStatusBadge status={status} />
           </div>
-          <div className="flex items-center gap-2">
-            {canStop && (
-              <button
-                onClick={handleStop}
-                disabled={stopping}
-                className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-md transition-colors"
-              >
-                실행 중단
-              </button>
-            )}
-            <button
-              onClick={() => setLogPanelOpen(!logPanelOpen)}
-              className="px-3 py-1.5 text-xs font-medium border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500 rounded-md transition-colors"
-            >
-              {logPanelOpen ? '로그 닫기' : '로그 보기'}
-            </button>
-          </div>
+          <button
+            onClick={() => setLogPanelOpen(!logPanelOpen)}
+            className="px-3 py-1.5 text-xs font-medium border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500 rounded-md transition-colors"
+          >
+            {logPanelOpen ? '로그 닫기' : '로그 보기'}
+          </button>
         </div>
 
         {/* Message area */}
@@ -173,48 +166,13 @@ export default function ChatView() {
           <div ref={bottomRef} />
         </div>
 
-        {/* Missing settings warning */}
-        {missingSettings && missingSettings.length > 0 && (
-          <div className="px-6 py-2 bg-amber-950/40 border-t border-amber-800/30 flex-shrink-0">
-            <p className="text-xs text-amber-400">
-              실행 전에{' '}
-              <span className="font-medium">
-                {missingSettings.map((f) => SETTING_LABELS[f] ?? f).join(', ')}
-              </span>{' '}
-              설정이 필요합니다.{' '}
-              <Link to="/settings" className="underline hover:text-amber-300 transition-colors">
-                설정 화면으로 이동
-              </Link>
-            </p>
-          </div>
-        )}
-
-        {/* Input bar */}
-        <div className="px-6 py-4 border-t border-gray-800 flex-shrink-0">
-          <div className="flex items-end gap-2">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  void handleSubmit()
-                }
-              }}
-              className="flex-1 bg-gray-900 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-gray-500 transition-colors"
-              rows={1}
-              placeholder="작업 요청을 입력하세요..."
-              disabled={submitting}
-            />
-            <button
-              onClick={() => void handleSubmit()}
-              disabled={!input.trim() || submitting}
-              className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-            >
-              전송
-            </button>
-          </div>
-        </div>
+        <InputBar
+          onSubmit={handleSubmit}
+          onStop={handleStop}
+          canStop={canStop}
+          isSubmitting={submitting}
+          missingSettings={missingSettings}
+        />
 
         <LogPanel executionId={executionId} open={logPanelOpen} />
       </div>
