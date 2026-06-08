@@ -82,4 +82,31 @@ projectRouter.delete('/:id', (req: Request, res: Response) => {
   res.status(204).send()
 })
 
+type Execution = {
+  id: string
+  project_id: string
+  request_text: string
+  status: string
+  started_at: string | null
+  completed_at: string | null
+  duration_ms: number | null
+  summary: string | null
+  error_message: string | null
+}
+
+projectRouter.get('/:id/executions', (req: Request, res: Response) => {
+  const { id } = req.params
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(id)
+  if (!project) {
+    res.status(404).json({ error: '프로젝트를 찾을 수 없습니다' })
+    return
+  }
+  const executions = db
+    .prepare(
+      'SELECT * FROM executions WHERE project_id = ? ORDER BY started_at DESC LIMIT 100'
+    )
+    .all(id) as Execution[]
+  res.json(executions)
+})
+
 export { projectRouter }

@@ -6,6 +6,7 @@ import { filesystemRouter } from './routers/filesystemRouter.js'
 import { closeDb } from './db/index.js'
 import { setupWebSocket } from './websocket/WebSocketServer.js'
 import { cleanupOrphanedExecutions } from './services/ProcessManager.js'
+import { executionRouter } from './routers/executionRouter.js'
 
 const app = express()
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000
@@ -27,6 +28,7 @@ app.use(express.json())
 app.use('/api', healthRouter)
 app.use('/api/projects', projectRouter)
 app.use('/api/filesystem', filesystemRouter)
+app.use('/api/executions', executionRouter)
 
 const server = createServer(app)
 
