@@ -5,6 +5,7 @@ import { projectRouter } from './routers/projectRouter.js'
 import { filesystemRouter } from './routers/filesystemRouter.js'
 import { closeDb } from './db/index.js'
 import { setupWebSocket } from './websocket/WebSocketServer.js'
+import { cleanupOrphanedExecutions } from './services/ProcessManager.js'
 
 const app = express()
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000
@@ -30,6 +31,9 @@ app.use('/api/filesystem', filesystemRouter)
 const server = createServer(app)
 
 setupWebSocket(server)
+
+cleanupOrphanedExecutions()
+console.log('[server] Orphaned executions cleaned up')
 
 server.listen(PORT, () => {
   console.log(`[server] Agent Studio listening on http://localhost:${PORT}`)
