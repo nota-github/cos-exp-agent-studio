@@ -114,7 +114,7 @@ processManager.on('exit', (executionId: string, code: number | null, signal: Nod
   const lastErr = lastStderrChunk.get(executionId) ?? null
   lastStderrChunk.delete(executionId)
   logCounts.delete(executionId)
-  const { summary } = adapter.parseResult(lines)
+  const { summary, fileChanges, commandsRun } = adapter.parseResult(lines)
 
   db.prepare(
     'UPDATE executions SET status = ?, completed_at = ?, duration_ms = ?, summary = ?, error_message = ? WHERE id = ?'
@@ -126,6 +126,29 @@ processManager.on('exit', (executionId: string, code: number | null, signal: Nod
       status,
       execRow.project_id
     )
+
+    const msgId = randomUUID()
+    const msgTime = new Date().toISOString()
+    if (status === 'completed') {
+      const metadata =
+        fileChanges?.length || commandsRun?.length
+          ? JSON.stringify({ fileChanges, commandsRun })
+          : null
+      db.prepare(
+        'INSERT INTO messages (id, execution_id, project_id, type, content, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(msgId, executionId, execRow.project_id, 'agent', summary, metadata, msgTime)
+    } else if (status === 'failed') {
+      const errContent = lastErr
+        ? `CLI 실행에 실패했습니다: ${lastErr}`
+        : 'CLI 실행에 실패했습니다'
+      db.prepare(
+        'INSERT INTO messages (id, execution_id, project_id, type, content, metadata, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)'
+      ).run(msgId, executionId, execRow.project_id, 'system', errContent, msgTime)
+    } else if (status === 'cancelled') {
+      db.prepare(
+        'INSERT INTO messages (id, execution_id, project_id, type, content, metadata, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)'
+      ).run(msgId, executionId, execRow.project_id, 'system', '실행이 중단되었습니다', msgTime)
+    }
   }
 
   broadcast(executionId, { type: 'status', executionId, status })
@@ -211,6 +234,10 @@ executionRouter.post('/', async (req: Request, res: Response) => {
     res.status(500).json({ error: '실행 시작에 실패했습니다' })
     return
   }
+
+  db.prepare(
+    'INSERT INTO messages (id, execution_id, project_id, type, content, metadata, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)'
+  ).run(randomUUID(), executionId, projectId, 'user', requestText, now)
 
   broadcast(executionId, { type: 'status', executionId, status: 'running' })
   res.status(201).json({ executionId })
