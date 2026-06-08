@@ -266,6 +266,30 @@ executionRouter.delete('/:id', (req: Request, res: Response) => {
   res.status(204).send()
 })
 
+executionRouter.get('/:id/logs', (req: Request, res: Response) => {
+  const id = req.params.id as string
+  const execution = db.prepare('SELECT id FROM executions WHERE id = ?').get(id)
+  if (!execution) {
+    res.status(404).json({ error: '실행을 찾을 수 없습니다' })
+    return
+  }
+  const logs = db.prepare('SELECT * FROM logs WHERE execution_id = ? ORDER BY timestamp ASC').all(id)
+  res.json(logs)
+})
+
+executionRouter.get('/:id/messages', (req: Request, res: Response) => {
+  const id = req.params.id as string
+  const execution = db.prepare('SELECT id FROM executions WHERE id = ?').get(id)
+  if (!execution) {
+    res.status(404).json({ error: '실행을 찾을 수 없습니다' })
+    return
+  }
+  const messages = db
+    .prepare('SELECT * FROM messages WHERE execution_id = ? ORDER BY created_at ASC')
+    .all(id)
+  res.json(messages)
+})
+
 executionRouter.get('/:id', (req: Request, res: Response) => {
   const id = req.params.id as string
   const execution = db.prepare('SELECT * FROM executions WHERE id = ?').get(id)
