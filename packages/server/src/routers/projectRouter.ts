@@ -109,4 +109,29 @@ projectRouter.get('/:id/executions', (req: Request, res: Response) => {
   res.json(executions)
 })
 
+type Message = {
+  id: string
+  execution_id: string
+  project_id: string
+  type: string
+  content: string
+  metadata: string | null
+  created_at: string
+}
+
+projectRouter.get('/:id/messages', (req: Request, res: Response) => {
+  const { id } = req.params
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(id)
+  if (!project) {
+    res.status(404).json({ error: '프로젝트를 찾을 수 없습니다' })
+    return
+  }
+  const messages = db
+    .prepare(
+      'SELECT id, execution_id, project_id, type, content, metadata, created_at FROM messages WHERE project_id = ? ORDER BY created_at ASC'
+    )
+    .all(id) as Message[]
+  res.json(messages)
+})
+
 export { projectRouter }
