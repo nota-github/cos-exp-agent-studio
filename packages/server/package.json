@@ -8,7 +8,7 @@
     "dev": "tsx watch src/app.ts",
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+    "test": "node --import tsx --test 'src/**/__tests__/**/*.test.ts'"
   },
   "dependencies": {
     "express": "^5.0.1",
