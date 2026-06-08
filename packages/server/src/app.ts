@@ -8,6 +8,7 @@ import { setupWebSocket } from './websocket/WebSocketServer.js'
 import { cleanupOrphanedExecutions } from './services/ProcessManager.js'
 import { executionRouter } from './routers/executionRouter.js'
 import { settingsRouter } from './routers/settingsRouter.js'
+import { approvalService } from './services/ApprovalService.js'
 
 const app = express()
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000
@@ -35,6 +36,7 @@ app.use('/api/settings', settingsRouter)
 const server = createServer(app)
 
 setupWebSocket(server)
+approvalService.setup()
 
 cleanupOrphanedExecutions()
 console.log('[server] Orphaned executions cleaned up')
