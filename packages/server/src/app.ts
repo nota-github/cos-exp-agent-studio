@@ -7,6 +7,7 @@ import { closeDb } from './db/index.js'
 import { setupWebSocket } from './websocket/WebSocketServer.js'
 import { cleanupOrphanedExecutions } from './services/ProcessManager.js'
 import { executionRouter } from './routers/executionRouter.js'
+import { settingsRouter } from './routers/settingsRouter.js'
 
 const app = express()
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000
@@ -29,6 +30,7 @@ app.use('/api', healthRouter)
 app.use('/api/projects', projectRouter)
 app.use('/api/filesystem', filesystemRouter)
 app.use('/api/executions', executionRouter)
+app.use('/api/settings', settingsRouter)
 
 const server = createServer(app)
 
