@@ -1,50 +1,96 @@
 import { homedir } from 'os'
 import { join } from 'path'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, accessSync, constants } from 'fs'
+import keytar from 'keytar'
 
-const CONFIG_DIR = join(homedir(), '.agent-studio')
-const SETTINGS_FILE = join(CONFIG_DIR, 'settings.json')
+const KEYCHAIN_SERVICE = 'agent-studio'
+const KEYCHAIN_ACCOUNT = 'api-key'
 
-export interface Settings {
-  cli_path?: string
-  api_key?: string
-  model?: string
-  default_project_path?: string
-  extra_args?: string[]
+export interface Config {
+  cliPath: string
+  defaultModel: string
+  defaultProjectFolder: string
+  runOptions: string
+  historyRetentionCount: number
 }
 
-class SettingsManager {
-  private settings: Settings = {}
+const DEFAULT_CONFIG: Config = {
+  cliPath: '',
+  defaultModel: '',
+  defaultProjectFolder: '',
+  runOptions: '',
+  historyRetentionCount: 100,
+}
 
-  constructor() {
-    this.load()
+export class SettingsManager {
+  private readonly configDir: string
+  private readonly configFile: string
+  private config: Config = { ...DEFAULT_CONFIG }
+
+  constructor(configDir?: string) {
+    this.configDir = configDir ?? join(homedir(), '.agent-studio')
+    this.configFile = join(this.configDir, 'config.json')
+    this.loadConfig()
   }
 
-  private load(): void {
-    if (!existsSync(SETTINGS_FILE)) return
+  loadConfig(): Config {
+    mkdirSync(this.configDir, { recursive: true })
+    if (!existsSync(this.configFile)) {
+      writeFileSync(this.configFile, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8')
+      this.config = { ...DEFAULT_CONFIG }
+    } else {
+      try {
+        const raw = JSON.parse(readFileSync(this.configFile, 'utf-8')) as Partial<Config>
+        this.config = { ...DEFAULT_CONFIG, ...raw }
+      } catch {
+        this.config = { ...DEFAULT_CONFIG }
+      }
+    }
+    return { ...this.config }
+  }
+
+  saveConfig(partial: Partial<Config>): void {
+    this.config = { ...this.config, ...partial }
+    mkdirSync(this.configDir, { recursive: true })
+    writeFileSync(this.configFile, JSON.stringify(this.config, null, 2), 'utf-8')
+  }
+
+  async getApiKey(): Promise<string | null> {
     try {
-      this.settings = JSON.parse(readFileSync(SETTINGS_FILE, 'utf-8')) as Settings
+      return await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
     } catch {
-      this.settings = {}
+      const envKey = process.env.AGENT_STUDIO_API_KEY ?? null
+      if (envKey) {
+        console.warn('[SettingsManager] keytar unavailable — falling back to AGENT_STUDIO_API_KEY env var')
+      }
+      return envKey
     }
   }
 
-  getSettings(): Settings {
-    return { ...this.settings }
+  async setApiKey(key: string): Promise<void> {
+    await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, key)
   }
 
-  save(updates: Partial<Settings>): void {
-    this.settings = { ...this.settings, ...updates }
-    mkdirSync(CONFIG_DIR, { recursive: true })
-    writeFileSync(SETTINGS_FILE, JSON.stringify(this.settings, null, 2), 'utf-8')
-  }
-
-  isConfigured(): { configured: boolean; missing: string[] } {
+  async isConfigured(): Promise<{ ok: boolean; missing: string[] }> {
     const missing: string[] = []
-    if (!this.settings.cli_path) missing.push('cli_path')
-    const hasApiKey = !!this.settings.api_key || !!process.env.ANTHROPIC_API_KEY
-    if (!hasApiKey) missing.push('api_key')
-    return { configured: missing.length === 0, missing }
+
+    const { cliPath } = this.config
+    if (!cliPath) {
+      missing.push('cli_path')
+    } else {
+      try {
+        accessSync(cliPath, constants.X_OK)
+      } catch {
+        missing.push('cli_path')
+      }
+    }
+
+    const apiKey = await this.getApiKey()
+    if (!apiKey) {
+      missing.push('api_key')
+    }
+
+    return { ok: missing.length === 0, missing }
   }
 }
 
