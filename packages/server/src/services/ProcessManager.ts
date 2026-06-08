@@ -8,6 +8,7 @@ interface ManagedProcess {
   child: ChildProcess
   status: ProcessStatus
   killTimer: ReturnType<typeof setTimeout> | null
+  paused: boolean
 }
 
 export declare interface ProcessManager {
@@ -38,7 +39,7 @@ export class ProcessManager extends EventEmitter {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
-    const managed: ManagedProcess = { child, status: 'running', killTimer: null }
+    const managed: ManagedProcess = { child, status: 'running', killTimer: null, paused: false }
     this.processes.set(executionId, managed)
 
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -88,9 +89,19 @@ export class ProcessManager extends EventEmitter {
     }, 5_000)
   }
 
+  pause(executionId: string): void {
+    const managed = this.processes.get(executionId)
+    if (managed) managed.paused = true
+  }
+
+  resume(executionId: string): void {
+    const managed = this.processes.get(executionId)
+    if (managed) managed.paused = false
+  }
+
   write(executionId: string, data: string): void {
     const managed = this.processes.get(executionId)
-    if (!managed || managed.status !== 'running') return
+    if (!managed || managed.status !== 'running' || managed.paused) return
     managed.child.stdin?.write(data)
   }
 
@@ -108,6 +119,6 @@ export function cleanupOrphanedExecutions(): void {
     SET status = 'failed',
         error_message = '서버 재시작으로 인해 중단됨',
         completed_at = ?
-    WHERE status IN ('running', 'pending')
+    WHERE status IN ('running', 'pending', 'approval_pending')
   `).run(now)
 }
